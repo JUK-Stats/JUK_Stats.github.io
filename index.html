@@ -2,17 +2,21 @@
 <html lang="ru">
 <head>
     <!-- Google tag (gtag.js) -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=G-1N55J5RTGS"></script>
-<script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
-
-  gtag('config', 'G-1N55J5RTGS');
-</script>
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-1N55J5RTGS"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-1N55J5RTGS');
+    </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>JUK Stats</title>
+    <!-- Загрузка библиотек через CDN с предзагрузкой -->
+    <link rel="preconnect" href="https://cdn.jsdelivr.net">
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com">
+    <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
+    <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
@@ -730,20 +734,18 @@
             initChart();
             
             // Добавляем обработчики для полей ввода
-            setTimeout(() => {
-                document.querySelectorAll('.damage-input').forEach(input => {
-                    input.addEventListener('change', function() {
-                        const index = parseInt(this.getAttribute('data-index'));
-                        updateDamage(index, this.value);
-                    });
+            document.querySelectorAll('.damage-input').forEach(input => {
+                input.addEventListener('change', function() {
+                    const index = parseInt(this.getAttribute('data-index'));
+                    updateDamage(index, this.value);
                 });
+            });
 
-                // Обработчик для названия техники
-                document.getElementById('technique-name').addEventListener('change', function() {
-                    appState.techniqueName = this.value;
-                    saveData();
-                });
-            }, 100);
+            // Обработчик для названия техники
+            document.getElementById('technique-name').addEventListener('change', function() {
+                appState.techniqueName = this.value;
+                saveData();
+            });
         });
 
         function toggleInstructions() {
@@ -910,7 +912,7 @@
             
             const nonZeroDamages = appState.battles.filter(b => b.damage > 0).map(b => b.damage);
             const maxDamage = nonZeroDamages.length > 0 ? Math.max(...nonZeroDamages) : 0;
-            const minDamage = nonZeroDamades.length > 0 ? Math.min(...nonZeroDamages) : 0;
+            const minDamage = nonZeroDamages.length > 0 ? Math.min(...nonZeroDamages) : 0;
 
             // Обновляем UI
             document.getElementById('remaining-damage').textContent = remaining.toLocaleString();
@@ -941,6 +943,18 @@
             document.getElementById('avg-trend').className = avgProgress >= 100 ? 'stat-trend text-success' : 'stat-trend text-warning';
         }
 
+        // Функция для вычисления скользящего среднего
+        function calculateMovingAverage(data, windowSize = 10) {
+            const result = [];
+            for (let i = 0; i < data.length; i++) {
+                const start = Math.max(0, i - windowSize + 1);
+                const values = data.slice(start, i + 1);
+                const sum = values.reduce((a, b) => a + b, 0);
+                result.push(Math.round(sum / values.length));
+            }
+            return result;
+        }
+
         function initChart() {
             const ctx = document.getElementById('damage-chart').getContext('2d');
             
@@ -950,6 +964,14 @@
             
             const theme = themes[appState.currentTheme];
             
+            // Вычисляем скользящее среднее
+            const damageData = appState.battles.map(b => b.damage);
+            const movingAverage = calculateMovingAverage(damageData);
+            
+            // Находим максимальный и минимальный урон
+            const maxDamage = Math.max(...damageData.filter(d => d > 0));
+            const minDamage = Math.min(...damageData.filter(d => d > 0));
+            
             damageChart = new Chart(ctx, {
                 type: 'line',
                 data: {
@@ -957,12 +979,17 @@
                     datasets: [
                         {
                             label: 'Урон за бой',
-                            data: appState.battles.map(b => b.damage),
+                            data: damageData,
                             borderColor: theme.primary,
                             backgroundColor: theme.primary + '20',
                             tension: 0.1,
                             fill: false,
-                            pointRadius: 3
+                            pointRadius: 3,
+                            pointBackgroundColor: function(context) {
+                                const index = context.dataIndex;
+                                const value = context.dataset.data[index];
+                                return value > appState.targetAvg ? '#10b981' : '#ef4444';
+                            }
                         },
                         {
                             label: 'Целевое среднее',
@@ -970,6 +997,35 @@
                             borderColor: theme.secondary,
                             backgroundColor: theme.secondary + '20',
                             borderDash: [5, 5],
+                            tension: 0,
+                            fill: false,
+                            pointRadius: 0
+                        },
+                        {
+                            label: 'Скользящее среднее (10 боев)',
+                            data: movingAverage,
+                            borderColor: '#f59e0b',
+                            backgroundColor: '#f59e0b' + '20',
+                            tension: 0.3,
+                            fill: false,
+                            pointRadius: 2
+                        },
+                        {
+                            label: 'Максимальный урон',
+                            data: Array(BATTLE_COUNT).fill(maxDamage > 0 ? maxDamage : null),
+                            borderColor: '#10b981',
+                            backgroundColor: '#10b981' + '20',
+                            borderDash: [3, 3],
+                            tension: 0,
+                            fill: false,
+                            pointRadius: 0
+                        },
+                        {
+                            label: 'Минимальный урон',
+                            data: Array(BATTLE_COUNT).fill(minDamage > 0 && minDamage < maxDamage ? minDamage : null),
+                            borderColor: '#ef4444',
+                            backgroundColor: '#ef4444' + '20',
+                            borderDash: [3, 3],
                             tension: 0,
                             fill: false,
                             pointRadius: 0
@@ -989,6 +1045,10 @@
                             labels: {
                                 color: '#f1f5f9'
                             }
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false
                         }
                     },
                     scales: {
@@ -1027,9 +1087,19 @@
             if (damageChart) {
                 const theme = themes[appState.currentTheme];
                 
-                damageChart.data.datasets[0].data = appState.battles.map(b => b.damage);
-                damageChart.data.datasets[1].data = Array(BATTLE_COUNT).fill(appState.targetAvg);
+                // Обновляем данные
+                const damageData = appState.battles.map(b => b.damage);
+                const movingAverage = calculateMovingAverage(damageData);
+                const maxDamage = Math.max(...damageData.filter(d => d > 0));
+                const minDamage = Math.min(...damageData.filter(d => d > 0));
                 
+                damageChart.data.datasets[0].data = damageData;
+                damageChart.data.datasets[1].data = Array(BATTLE_COUNT).fill(appState.targetAvg);
+                damageChart.data.datasets[2].data = movingAverage;
+                damageChart.data.datasets[3].data = Array(BATTLE_COUNT).fill(maxDamage > 0 ? maxDamage : null);
+                damageChart.data.datasets[4].data = Array(BATTLE_COUNT).fill(minDamage > 0 && minDamage < maxDamage ? minDamage : null);
+                
+                // Обновляем цвета
                 damageChart.data.datasets[0].borderColor = theme.primary;
                 damageChart.data.datasets[0].backgroundColor = theme.primary + '20';
                 damageChart.data.datasets[1].borderColor = theme.secondary;
